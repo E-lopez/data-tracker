@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Data Tracker Lambda with Supabase PostgreSQL
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  S3Bucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment package
+    Default: data-tracker-deployment-bucket
+  
+  S3Key:
+    Type: String
+    Default: data-tracker/function.zip
+    Description: S3 key for the Lambda deployment package
+  
+  DopplerToken:
+    Type: String
+    Description: Doppler service token for accessing secrets
+    NoEcho: true
+
+Resources:
+  # Lambda Execution Role
+  ScoreHandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # Lambda Function
+  DataTrackerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub data-tracker-${Environment}
+      Runtime: python3.13
+      Architectures:
+        - arm64
+      CodeUri: 
+        Bucket: !Ref S3Bucket
+        Key: !Ref S3Key
+      Handler: lambda_function.lambda_handler
+      MemorySize: 512
+      Timeout: 30
+      Role: !GetAtt ScoreHandlerRole.Arn
+      Environment:
+        Variables:
+          DOPPLER_TOKEN: !Ref DopplerToken
+          ENVIRONMENT: !Ref Environment
+      Events:
+        HttpApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/'
+    Export:
+      Name: !Sub DataTrackerApi-${Environment}
+
+  DataTrackerFunctionArn:
+    Description: Data Tracker Lambda Function ARN
+    Value: !GetAtt DataTrackerFunction.Arn
+    Export:
+      Name: !Sub DataTrackerFunction-${Environment}
+
+  DataTrackerFunctionName:
+    Description: Data Tracker Lambda Function Name
+    Value: !Ref DataTrackerFunction
+    Export:
+      Name: !Sub DataTrackerFunctionName-${Environment}
