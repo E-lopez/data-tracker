@@ -1,5 +1,6 @@
 from utils.status_utils import calculate_status
 from utils.date_utils import calculate_days
+from datetime import datetime, timedelta
 
 def safe_float(value):
     """Convert string to float, handling European decimal format"""
@@ -30,15 +31,52 @@ def _update_status_and_fees(current, outstanding_from_prev, last_status, consecu
         current['late_payment_fee'] = round((safe_float(current['installment']) + abs(outstanding_from_prev)) * 0.03, 2)
     return current
 
+def create_extension_period(session, loan_id, current, consecutive_defaulted):
+    """Create extension period for loans with outstanding balance at final period"""
+    
+    # Get loan metadata to calculate interest rate
+    metadata = session.query(LoanMetadata).filter_by(loan_id=loan_id).first()
+    
+    # Create additional period for remaining balance
+    next_period = current['period'] + 1
+    next_due_date = current['due_date'] + relativedelta(months=1)
+    
+    outstanding_amount = abs(current['outstanding_balance'])
+    # Calculate interest on outstanding balance (monthly rate)
+    monthly_rate = safe_float(metadata.rate) / 12 / 100 if metadata else 0.02  # Default 2% monthly
+    interest_amount = round(outstanding_amount * monthly_rate, 2)
+    principal_amount = outstanding_amount
+    total_installment = round(principal_amount + interest_amount, 2)
+    
+    new_row = LoanTables(
+        loan_id=loan_id,
+        period=next_period,
+        due_date=next_due_date,
+        installment=total_installment,
+        principal=principal_amount,
+        interest=interest_amount,
+        service_fee=0.0,
+        insurance_fee=0.0,
+        late_payment_fee=0.0,
+        payed_amount=0.0,
+        outstanding_balance=-total_installment,
+        status='pending',
+        late_days=0,
+        payment_date=None,
+        consecutive_defaulted=consecutive_defaulted
+    )
+    session.add(new_row)
+
 
 def calculate_period(**kwargs):
-    from datetime import datetime
     outstanding_from_prev = safe_float(kwargs.get("outstanding_from_prev"))
     last_status = kwargs.get("last_status")
     payment = kwargs.get("payment")
     payment_date = kwargs.get("payment_date")
     consecutive_defaulted = int(kwargs.get("consecutive_defaulted") or 0)
     current = kwargs.get("current")
+    session = kwargs.get("session")
+    loan_id = kwargs.get("loan_id")
 
     print(f"incoming V2: {current}")
 
@@ -62,6 +100,16 @@ def calculate_period(**kwargs):
     current['status'] = calculate_status(consecutive_defaulted, last_status, is_late, current['outstanding_balance'])
 
     current['late_days'] = calculate_days(current['due_date'], payment_date) if is_late else 0
+    
+    # Handle edge case: last period with outstanding balance
+    if session and loan_id and current['outstanding_balance'] < 0:
+        # Check if this is the last period
+        from models.loan_tables import LoanTables
+        max_period = session.query(LoanTables.period).filter_by(loan_id=loan_id).order_by(LoanTables.period.desc()).first()
+        
+        if max_period and current['period'] == max_period[0]:
+            create_extension_period(session, loan_id, current, consecutive_defaulted)
+    
     current['due_date'] = current['due_date'].isoformat()
     current['payment_date'] = payment_date.isoformat()
     return current
