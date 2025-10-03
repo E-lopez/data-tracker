@@ -2,10 +2,10 @@ from datetime import date
 import calendar
 
 
-def calculate_late_days(due_date, payment_date):
-    if not due_date or not payment_date:
+def calculate_days(initial_date, final_date):
+    if not initial_date or not final_date:
         return 0
-    delta = (payment_date - due_date).days
+    delta = (final_date - initial_date).days
     return max(0, delta)
 
 
@@ -24,3 +24,4 @@ def get_last_date_of_month(current_date=None):
 
     # Create a date object for the last day of the month
     return date(year, month, num_days)
+    

@@ -5,7 +5,7 @@ from sqlalchemy import insert
 from models.loan_tables import LoanTables
 from models.loan_metadata import LoanMetadata
 from database import get_db_session, close_db_session, DatabaseSession
-from utils.table_utils import prepare_data
+from utils.table_utils import prepare_data, serialize_dates
 
 # Configure logging for Lambda
 logging.basicConfig(
@@ -18,9 +18,10 @@ logger = logging.getLogger(__name__)
 def get_tables():
     session = get_db_session()
     try:
+        print("Getting tables")
         user_table = session.query(LoanTables).all()
         if user_table:
-            return user_table.to_dict()
+            return serialize_dates([serialize_dates(row.to_dict()) for row in user_table])
         return None
     except SQLAlchemyError as e:
         logger.error(f"Error getting tables: {str(e)}")

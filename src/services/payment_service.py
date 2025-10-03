@@ -4,12 +4,14 @@ from dateutil.relativedelta import relativedelta
 import logging
 import sys
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import extract, func
+from sqlalchemy import update
 from models.loan_tables import LoanTables
 from models.loan_metadata import LoanMetadata
+from models.user_payments import UserPayments
 from database import get_db_session, close_db_session
-from utils.amortization_utils import calculate_late_fee
-from utils.date_utils import calculate_late_days, get_last_date_of_month
+from utils.amortization_utils import calculate_period, safe_float
+from utils.date_utils import get_last_date_of_month
+from services.metadata_service import update_loan_metadata
 
 # Configure logging for Lambda
 logging.basicConfig(
@@ -47,40 +49,14 @@ def get_table_by_loan_id(loan_id):
         close_db_session(session)
 
 
-def calculate_period(**kwargs):
-    current = kwargs.get("current")
-    print(f"Current Rows: {len(current)}")
-
-
-def calculate_first_period(**kwargs):
-    loan_metadata = kwargs.get("session").query(LoanMetadata).filter_by(loan_id=kwargs.get("loan_id")).first()
-    current_balance = loan_metadata.balance if loan_metadata and loan_metadata.balance else 0
-
-    print(f"Current Balance: {kwargs.get('current')['due_date']}, {current_balance}")
-
-    current = kwargs.get("current")
-    current['late_days'] = calculate_late_days(current['due_date'], kwargs.get("payment_date"))
-    current['late_payment_fee'] = calculate_late_fee(current['late_days'], current_balance)
-    current['calc_installment'] = current['late_payment_fee'] + current['interest'] + current['principal'] + current['service_fee'] + current['insurance_fee']
-    current['outstanding_balance'] = float(kwargs.get("payment")) - current['calc_installment']
-    
-    current['status'] = 'default' if current['outstanding_balance'] <= 0 else 'payed'
-    current['due_date'] = current['due_date'].isoformat()
-    current['payment_date'] = kwargs.get("payment_date").isoformat()
-    current['payed_amount'] = kwargs.get("payment")
-    current['receipt_id'] = f"R-{kwargs.get('loan_id')}-{current['period']}"
-    return current
-
-def get_current_row(data):
-    session = get_db_session()
+def calculate_current_row(session, data):
     loan_id = data.get("loan_id")
-    payment = data.get("installment", 0)
-    payment_date = date.today()
+    payment = safe_float(data.get("installment", 0))
+    payment_date = date.today() + relativedelta(months=data.get("month_offset") or 0, days=28)
     end_date = get_last_date_of_month(payment_date)
     start_date = end_date - relativedelta(months=2)
 
-
-    print(f"Data: {data}")
+    print(f"Loan Id: {loan_id}, {data}")
 
     current = session.query(LoanTables).filter(
         LoanTables.loan_id == loan_id,
@@ -89,52 +65,106 @@ def get_current_row(data):
     ).order_by(LoanTables.due_date.asc()).limit(2).all()
     
     # Convert to dictionaries
-    current = [row.to_dict() for row in current]
+    current_editable = [row.to_dict() for row in current]
 
-    is_first_period = True if len(current) == 1 else False
+    # Check if current list is empty
+    if not current_editable:
+        close_db_session(session)
+        return {'message': 'No current row found'}
 
-    if(is_first_period):
-        return calculate_first_period(session=session, loan_id=loan_id, current=current[0], payment=payment, payment_date=payment_date)
-    else:
-        return calculate_period(session=session, loan_id=loan_id, current=current, payment=payment, payment_date=payment_date)
+    is_first_period = True if len(current_editable) == 1 else False
+    outstanding_from_prev = 0.0 if is_first_period else safe_float(current_editable[0]['outstanding_balance'])
+    last_status = None if is_first_period else current_editable[0]['status']
+    consecutive_defaulted = 0 if is_first_period else current_editable[0].get('consecutive_defaulted', 0)
+    # Select the appropriate current row
+    current_row = current_editable[0] if is_first_period else current_editable[1]
 
+    res = calculate_period(
+        session=session, 
+        loan_id=loan_id,
+        current=current_row, 
+        payment=payment, 
+        payment_date=payment_date, 
+        outstanding_from_prev=outstanding_from_prev, 
+        last_status=last_status,
+        consecutive_defaulted=consecutive_defaulted,
+        is_first_period=is_first_period
+    )
 
-    # Convert SQLAlchemy objects to dictionaries
-    result = []
-    for curr in current:
-        if curr:
-            curr_dict = curr.to_dict()
-            # Convert date to string for JSON serialization
-            if curr_dict.get('due_date'):
-                curr_dict['due_date'] = curr.due_date.isoformat()
-            result.append(curr_dict)
-    
-    close_db_session(session)
-    return result
+    # Update loan metadata
+    update_loan_metadata(loan_id, res)
+
+    return {'row': res, 'period': current_row['period']}
 
 
 def record_payment(data):
-    # Placeholder for future implementation
     try:
-        current_rows = get_current_row(data)
-        print(f"Current Rows: {current_rows}")
-        return current_rows if current_rows else {'message': 'No current row found'}
+        session = get_db_session()
+        loan_id = data.get("loan_id")
+        current_row = calculate_current_row(session, data)
+        
+        # Update loan tables
+        stmt = update(LoanTables).where(LoanTables.loan_id == loan_id).where(LoanTables.period == current_row['period']).values(**current_row['row'])
+        session.execute(stmt)
+        
+        # Register payment in user_payments table
+        user_payment = UserPayments(
+            user_id=data.get('user_id', ''),
+            loan_id=loan_id,
+            document_id=data.get('document_id', ''),
+            payment_date=current_row['row']['payment_date'],
+            payed_amount=safe_float(data.get('installment', 0))
+        )
+        session.add(user_payment)
+        
+        session.commit()
+        close_db_session(session)
+        return current_row['row'] if current_row else {'message': 'No current row found'}
     except Exception as e:
         logger.error(f"Error recording payment: {str(e)}")
         return {'message': 'Error recording payment'}
 
 
-# current_row.status = 'paid'
-# current_row.payed_amount = data.get('payed_amount', current_row.payed_amount)
-# current_row.payment_date = data.get('payment_date', current_row.payment_date)
-# current_row.outstanding_balance = current_row.outstanding_balance - current_row.payed_amount
-# current_row.late_days = data.get('late_days', 0)
-# current_row.late_payment_fee = data.get('late_payment_fee', 0)
-# current_row.receipt_id = data.get('receipt_id', current_row.receipt_id)
+def end_of_month_update():
+    from datetime import date
+    import calendar
+    
+    # Check if today is the last day of the month
+    today = date.today()
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    if today.day != last_day:
+        return {'message': 'Not the last day of the month', 'updated_loans': 0}
+    
+    session = get_db_session()
+    try:
+        # Get all loan metadata
+        loan_metadata = session.query(LoanMetadata).all()
+        updated_count = 0
+        
+        for metadata in loan_metadata:
+            try:
+                # Send 0 payment for each loan
+                data = {'loan_id': metadata.loan_id, 'installment': 0, 'month_offset': 0}
+                calculate_current_row(session, data)
+                updated_count += 1
+            except Exception as e:
+                logger.error(f"Error updating loan {metadata.loan_id}: {str(e)}")
+                continue
+        
+        session.commit()
+        return {'message': 'End of month update completed', 'updated_loans': updated_count}
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error in end_of_month_update: {str(e)}")
+        return {'message': 'Error in end of month update', 'updated_loans': 0}
+    finally:
+        close_db_session(session)
 
-# session = get_db_session()
-# session.add(current_row)
-# session.commit()
-# session.refresh(current_row)
-# close_db_session(session)
-# logger.info(f"Current row after update: {current_row.to_dict()}")
+## The following functions are placeholders for future implementation
+def get_payment(loan_id, month_offset):
+    session = get_db_session()
+    data = {'loan_id': loan_id, 'month_offset': month_offset or 0}
+    current_row = calculate_current_row(session, data)
+    close_db_session(session)
+    return current_row if current_row else {'message': 'No current row found'}
+ 

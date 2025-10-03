@@ -19,7 +19,7 @@ class LoanTables(Base):
     late_days = Column(Numeric, nullable=True)
     payed_amount = Column(Numeric, nullable=True)
     outstanding_balance = Column(Numeric, nullable=True)
-    receipt_id = Column(String(150), nullable=True)
+    consecutive_defaulted = Column(Numeric, nullable=True)
     status = Column(String(50), nullable=True)	
 
     def to_dict(self):
@@ -38,7 +38,7 @@ class LoanTables(Base):
             'late_days': float(self.late_days) if self.late_days is not None else None,
             'payed_amount': float(self.payed_amount) if self.payed_amount is not None else None,
             'outstanding_balance': float(self.outstanding_balance) if self.outstanding_balance is not None else None,
-            'receipt_id': self.receipt_id,
+            'consecutive_defaulted': float(self.consecutive_defaulted) if self.consecutive_defaulted is not None else None,
             'status': self.status
         }
     

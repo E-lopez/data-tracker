@@ -11,7 +11,7 @@ sys.stdout.flush()
 from config import Config
 from database import init_db
 from services.table_service import get_table_by_id, get_tables, save_table, get_metadata, get_metadata_by_user_id, get_loan_by_loan_id
-from services.payment_service import record_payment
+from services.payment_service import record_payment, get_payment, end_of_month_update
 
 # Configure logging for Lambda
 logging.basicConfig(
@@ -70,6 +70,10 @@ def handle_route(http_method: str, path: str, path_parameters: Dict[str, Any], r
         return handle_get_loan_by_loan_id(path, path_parameters, origin)
     if path == '/record-payment' and http_method == 'POST':
         return handle_record_payment(request_data, origin)
+    if path.startswith('/get-payment') and http_method == 'GET':
+        return handle_get_payment(path, path_parameters, origin)
+    if path == '/end-of-month-update' and http_method == 'POST':
+        return handle_end_of_month_update(origin)
 
     # Uncomment and implement these routes as needed
     # if path == '/save-metadata' and http_method == 'POST':
@@ -87,8 +91,12 @@ def handle_health(origin: str) -> Dict[str, Any]:
     return create_response(200, {'status': 'healthy', 'service': 'data-tracker'}, origin)
 
 def handle_get_tables(origin: str) -> Dict[str, Any]:
-    result = get_tables()
-    return create_response(200, result, origin)
+    try:
+        result = get_tables()
+        return create_response(200, result, origin)
+    except Exception as e:
+        logger.error(f"Error logging tables: {str(e)}")
+        return create_response(500, {'error': 'Internal server error'}, origin)
 
 def handle_get_table_by_id(path: str, path_parameters: Dict[str, Any], origin: str) -> Dict[str, Any]:
     user_id = path_parameters.get('user_id') or path.split('/')[-1]
@@ -124,6 +132,26 @@ def handle_record_payment(request_data: Dict[str, Any], origin: str) -> Dict[str
     except Exception as e:
         logger.error(f"Error logging current row: {str(e)}")
     return create_response(200, result, origin)
+
+def handle_get_payment(path, path_parameters: Dict[str, Any], origin: str) -> Dict[str, Any]:
+    loan_id = path_parameters.get('loan_id') or path.split('/')[-2]
+    month_offset = path_parameters.get('month_offset') or path.split('/')[-1]
+    print(f"Data: {path}, {loan_id}, {month_offset}")
+    try:
+        month_offset = int(month_offset) if month_offset.isdigit() else 0
+        result = get_payment(loan_id, month_offset)
+    except Exception as e:
+        logger.error(f"Error processing payment request: {str(e)}")
+        return create_response(500, {'error': 'Internal server error'}, origin)
+    return create_response(200, result, origin)
+
+def handle_end_of_month_update(origin: str) -> Dict[str, Any]:
+    try:
+        result = end_of_month_update()
+        return create_response(200, result, origin)
+    except Exception as e:
+        logger.error(f"Error in end of month update: {str(e)}")
+        return create_response(500, {'error': 'Internal server error'}, origin)
 
 def create_response(status_code: int, body: Dict[str, Any], origin: str = None) -> Dict[str, Any]:
     """Create a properly formatted API Gateway response"""
