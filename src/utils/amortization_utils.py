@@ -1,6 +1,9 @@
+from models.loan_tables import LoanTables
+from models.loan_metadata import LoanMetadata
 from utils.status_utils import calculate_status
 from utils.date_utils import calculate_days
-from datetime import datetime, timedelta
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 def safe_float(value):
     """Convert string to float, handling European decimal format"""
@@ -8,12 +11,6 @@ def safe_float(value):
         return float(value.replace(',', '.'))
     return float(value or 0)
 
-
-def calculate_default_fee(last_status, outstanding_from_prev, last_payment_date, payment, payment_date):
-    elapsed_days = calculate_days(last_payment_date, payment_date)
-    if last_status == 'late' and elapsed_days <= 30:
-        return 0.0
-    
 
 def _update_status_and_fees(current, outstanding_from_prev, last_status, consecutive_defaulted, payment_in_full, is_late, is_first_period):
     if consecutive_defaulted >= 2 or last_status == 'blocked':
