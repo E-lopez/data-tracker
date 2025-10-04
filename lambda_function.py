@@ -54,35 +54,31 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 def handle_route(http_method: str, path: str, path_parameters: Dict[str, Any], request_data: Dict[str, Any], origin: str) -> Dict[str, Any]:
     """Handles routing logic for lambda_handler"""
+    route_map = {
+        ('GET', '/get-tables'): lambda: handle_get_tables(origin),
+        ('POST', '/save-table'): lambda: handle_save_table(request_data, origin),
+        ('GET', '/get-metadata'): lambda: handle_get_metadata(origin),
+        ('POST', '/record-payment'): lambda: handle_record_payment(request_data, origin),
+        ('POST', '/end-of-month-update'): lambda: handle_end_of_month_update(origin),
+    }
+
+    # Exact match routes
     if path in ['/health', '/']:
         return handle_health(origin)
-    if path == '/get-tables' and http_method == 'GET':
-        return handle_get_tables(origin)
-    if path.startswith('/get-table-by-id') and http_method == 'GET':
-        return handle_get_table_by_id(path, path_parameters, origin)
-    if path == '/save-table' and http_method == 'POST':
-        return handle_save_table(request_data, origin)
-    if path == '/get-metadata' and http_method == 'GET':
-        return handle_get_metadata(origin)
-    if path.startswith('/get-metadata-by-id/') and http_method == 'GET':
-        return handle_get_metadata_by_id(path, path_parameters, origin)
-    if path.startswith('/get-loan-by-loan-id/') and http_method == 'GET':
-        return handle_get_loan_by_loan_id(path, path_parameters, origin)
-    if path == '/record-payment' and http_method == 'POST':
-        return handle_record_payment(request_data, origin)
-    if path.startswith('/get-payment') and http_method == 'GET':
-        return handle_get_payment(path, path_parameters, origin)
-    if path == '/end-of-month-update' and http_method == 'POST':
-        return handle_end_of_month_update(origin)
+    route_key = (http_method, path)
+    if route_key in route_map:
+        return route_map[route_key]()
 
-    # Uncomment and implement these routes as needed
-    # if path == '/save-metadata' and http_method == 'POST':
-    #     result = save_metadata(request_data)
-    #     return create_response(200, result, origin)
-
-    # if path == '/record-payment' and http_method == 'POST':
-    #     result = record_payment(request_data)
-    #     return create_response(200, result, origin)
+    # Prefix-based routes
+    prefix_routes = [
+        ('GET', '/get-table-by-id', handle_get_table_by_id),
+        ('GET', '/get-metadata-by-id/', handle_get_metadata_by_id),
+        ('GET', '/get-loan-by-loan-id/', handle_get_loan_by_loan_id),
+        ('GET', '/get-payment', handle_get_payment),
+    ]
+    for method, prefix, handler in prefix_routes:
+        if http_method == method and path.startswith(prefix):
+            return handler(path, path_parameters, origin)
 
     logger.warning(f"No route found for {http_method} {path}")
     return create_response(404, {'error': f'Endpoint not found: {http_method} {path}'}, origin)
@@ -111,8 +107,12 @@ def handle_save_table(request_data: Dict[str, Any], origin: str) -> Dict[str, An
     return create_response(200, result, origin)
 
 def handle_get_metadata(origin: str) -> Dict[str, Any]:
-    result = get_metadata()
-    return create_response(200, result, origin)
+    try:
+        result = get_metadata()
+        return create_response(200, result, origin)
+    except Exception as e:
+        logger.error(f"Error logging metadata: {str(e)}")
+        return create_response(500, {'error': 'Internal server error'}, origin)
 
 def handle_get_metadata_by_id(path: str, path_parameters: Dict[str, Any], origin: str) -> Dict[str, Any]:
     user_id = path_parameters.get('user_id') or path.split('/')[-1]
