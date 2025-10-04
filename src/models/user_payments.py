@@ -1,9 +1,8 @@
-from sqlite3 import Date
-from sqlalchemy import Column, Integer, String, Numeric
+from sqlalchemy import Column, Integer, String, Numeric, Date
 from database import Base
 
 class UserPayments(Base):
-    __tablename__ = 'user_loans'
+    __tablename__ = 'user_payments'
 
     nrow = Column(Integer, unique=True, autoincrement=True, primary_key=True)
     user_id = Column(String(150), nullable=False)

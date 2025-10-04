@@ -52,7 +52,7 @@ def get_table_by_loan_id(loan_id):
 def calculate_current_row(session, data):
     loan_id = data.get("loan_id")
     payment = safe_float(data.get("installment", 0))
-    payment_date = date.today() + relativedelta(months=data.get("month_offset") or 0, days=28)
+    payment_date = date.today() + relativedelta(months=data.get("month_offset") or 0, days=20)
     end_date = get_last_date_of_month(payment_date)
     start_date = end_date - relativedelta(months=2)
 
@@ -92,7 +92,7 @@ def calculate_current_row(session, data):
     )
 
     # Update loan metadata
-    update_loan_metadata(loan_id, res)
+    update_loan_metadata(loan_id, res, session)
 
     return {'row': res, 'period': current_row['period']}
 
