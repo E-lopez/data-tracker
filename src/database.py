@@ -25,6 +25,7 @@ def init_db():
         # Import all models to register them with Base
         from models.loan_metadata import LoanMetadata
         from models.loan_tables import LoanTables
+        from models.user_payments import UserPayments
         
         # Create tables if they don't exist
         Base.metadata.create_all(bind=engine)
