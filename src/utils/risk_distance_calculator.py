@@ -62,14 +62,14 @@ class RiskDistanceCalculator:
         """Initialize clustering model with non-defaulter data"""
         try:
             non_defaulters = get_all_non_defaulters()
-            print(f"DEBUG: Retrieved {len(non_defaulters) if isinstance(non_defaulters, list) else 'ERROR'} non-defaulters")
+
             
             if isinstance(non_defaulters, dict) and 'error' in non_defaulters:
-                print(f"DEBUG: Error loading non-defaulters: {non_defaulters['error']}")
+
                 return False
             
             if len(non_defaulters) < 2:
-                print(f"DEBUG: Only {len(non_defaulters)} non-defaulters available, need at least 2")
+
                 return False
             
             # Extract and normalize features
@@ -105,12 +105,12 @@ class RiskDistanceCalculator:
             k = min(3, max(2, len(non_defaulters) // 2))
             self.non_defaulter_centroids = self._simple_clustering(normalized_features, k)
             
-            print(f"DEBUG: Successfully initialized risk calculator with {k} centroids")
+
             logger.info(f"Initialized risk distance calculator with {k} centroids")
             return True
             
         except Exception as e:
-            print(f"DEBUG: Exception in risk calculator init: {str(e)}")
+
             logger.error(f"Error initializing risk distance calculator: {str(e)}")
             return False
     

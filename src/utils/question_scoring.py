@@ -66,12 +66,12 @@ class Default(Strategy):
             return 5.0  # Default neutral score
         raw_avg = self.count / len(self.data)
         corrected_score = self.apply_bias_correction(raw_avg)
-        print(f"Raw average: {raw_avg}, Bias-corrected score: {corrected_score}")
+
         return corrected_score
     
     key = list(self.data)[i]
     value = self.data[key]
-    print(f"Scoring field: {key} with value: {value}")
+
     
     # Convert to int, default to 3 if not valid
     try:
@@ -80,7 +80,7 @@ class Default(Strategy):
         partial = 3
     
     self.count = self.count + partial
-    print(f"Current count: {self.count}, Partial score: {partial}. Len: {len(self.data)}")
+
     return self.score_question(self, args, i = i+1)
 
 
@@ -92,7 +92,7 @@ class DemographicsScoring(Strategy):
 
   def field_score(self, key) -> float:
     data = self.data[key]
-    print(f"Scoring field: {key} with value: {data}")
+
     
     if key == 'gender':
       if data == 'F':
@@ -123,7 +123,7 @@ class DemographicsScoring(Strategy):
     if i == len(relevant_data):
         base_score = self.count / len(relevant_data) if len(relevant_data) > 0 else 4.0
         final_score = base_score * self.gender_multiplier
-        print(f"Demographics base score: {base_score}, Gender multiplier: {self.gender_multiplier}, Final: {final_score}")
+
         return final_score
     
     key = list(relevant_data)[i]

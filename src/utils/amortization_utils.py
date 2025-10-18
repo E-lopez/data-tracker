@@ -75,7 +75,7 @@ def calculate_period(**kwargs):
     session = kwargs.get("session")
     loan_id = kwargs.get("loan_id")
 
-    print(f"incoming V2: {current}")
+
 
     is_first_period = kwargs.get('is_first_period')
     

@@ -56,7 +56,7 @@ def calculate_current_row(session, data):
     end_date = get_last_date_of_month(payment_date)
     start_date = end_date - relativedelta(months=2)
 
-    print(f"Loan Id: {loan_id}, {data}")
+
 
     current = session.query(LoanTables).filter(
         LoanTables.loan_id == loan_id,

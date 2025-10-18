@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def get_tables():
     session = get_db_session()
     try:
-        print("Getting tables")
+
         user_table = session.query(LoanTables).all()
         if user_table:
             return serialize_dates([serialize_dates(row.to_dict()) for row in user_table])
